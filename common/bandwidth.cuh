@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 inline void print_bandwidth(const char* label, size_t bytes, float ms) {
-    double gb = (double)bytes / (1024.0 * 1024.0 * 1024.0);
+    double gb = (double)bytes / 1e9;
     double seconds = (double)ms / 1000.0;
     double gbps = gb / seconds;
     printf("%-40s  %8.3f ms  %8.2f GB/s  (%zu bytes)\n", label, ms, gbps, bytes);
