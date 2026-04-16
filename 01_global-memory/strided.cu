@@ -8,7 +8,7 @@
 
 __global__ void read_strided(const float* __restrict__ data, float* __restrict__ out, int n, int stride){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    out[idx] = data[idx*stride];
+    if (idx < n) out[idx] = data[idx*stride];
 }
 
 
@@ -34,13 +34,13 @@ int main() {
         int grid = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
         size_t moved = 2 * N_float_bytes_moved;  // read + write
 
-        float ms_coal = benchmark([&]() {
+        float ms_strided = benchmark([&]() {
             read_strided<<<grid, BLOCK_SIZE>>>(d_data, d_out, max_N, strides[i]);
         });
 
         char label[64];
         sprintf(label, "Strided %d ", strides[i]);
-        print_bandwidth(label, moved, ms_coal);
+        print_bandwidth(label, moved, ms_strided);
 
         CUDA_CHECK(cudaFree(d_data));
         CUDA_CHECK(cudaFree(d_out));
