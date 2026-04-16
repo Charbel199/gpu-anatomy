@@ -8,7 +8,7 @@
 __global__ void only_read(const float* __restrict__ data, int n){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (idx < n) float _ = data[idx];
+    if (idx < n) volatile float _ = data[idx];
 }
 
 
@@ -71,4 +71,4 @@ int main() {
     }
 
 }
-// reads can end at L2, but writes always generate DRAM traffic because dirty lines must be evicted at some point
+// reads and write have practically the same speed
