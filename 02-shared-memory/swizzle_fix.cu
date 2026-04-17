@@ -63,7 +63,10 @@ int main() {
 
 
 /*
-After running the profiler I got:
+After running
+ncu --metrics l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum,l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_st.sum ./bin/02-shared-memory/swizzle_fix
+
+I got the following results:
 ==PROF== Profiling "shmem_no_swizzle" - 0: 0%....50%....100% - 1 pass
 Running shmem no swizzle tile kernel ...
 ==PROF== Profiling "shmem_swizzle" - 1: 0%....50%....100% - 1 pass
