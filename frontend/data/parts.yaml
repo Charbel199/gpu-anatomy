@@ -1,0 +1,682 @@
+# ============================================================================
+# 1. Chip-Level Organization (#1-#4)
+# ============================================================================
+
+- id: gigathread
+  number: 1
+  name: "GigaThread Engine"
+  category: scheduling
+  views: [chip]
+  count: { per: "GPU", n: 1 }
+  short: "Top-level scheduler. Distributes thread blocks to GPCs/SMs."
+  details: |
+    Global work distributor. Assigns thread blocks to GPCs/SMs and manages grid launches.
+    One per GPU.
+  related: [gpc, sm]
+  arch_introduced: Fermi
+
+- id: gpc
+  number: 2
+  name: "GPC"
+  category: scheduling
+  views: [chip]
+  parent: gigathread
+  count: { per: "GPU", n: 8 }
+  short: "Graphics Processing Cluster - group of TPCs."
+  details: |
+    Intermediate hierarchy level. Contains a Raster Engine and several TPCs.
+  related: [tpc, sm, raster_engine]
+  arch_introduced: Fermi
+
+- id: tpc
+  number: 3
+  name: "TPC"
+  category: scheduling
+  views: [chip]
+  parent: gpc
+  count: { per: "GPC", n: 3 }
+  short: "Texture Processing Cluster - group of SMs plus shared texture units."
+  related: [gpc, sm, texture_cache]
+  arch_introduced: Fermi
+
+- id: sm
+  number: 4
+  name: "Streaming Multiprocessor"
+  category: compute
+  views: [chip]
+  parent: tpc
+  count: { per: "GPU", n: 132 }
+  short: "The main compute unit. Everything in the sm view lives inside an SM."
+  details: |
+    Each SM has warp schedulers, a register file, FP32/INT32/FP64 cores,
+    Tensor and RT cores, LD/ST units, SFUs, and a unified L1/shared SRAM.
+  related: [warp_scheduler, fp32_cores, tensor_cores, shared_memory_l1]
+  arch_introduced: Fermi
+
+# ============================================================================
+# 2. Inside the SM - Scheduling (#5-#9)
+# ============================================================================
+
+- id: warp_scheduler
+  number: 5
+  name: "Warp Scheduler"
+  category: scheduling
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 4 }
+  short: "Picks one ready warp per cycle and issues its next instruction."
+  key_numbers:
+    - "~1 cycle issue rate"
+  details: |
+    Scoreboard tracks register dependencies to determine which warps are ready.
+    On Volta+ each SM has four schedulers, each with its own dispatch unit.
+  related: [register_file, instruction_cache, scoreboard, dispatch_unit, simt_stack]
+  modules: ["04-warp-behavior"]
+  arch_introduced: Fermi
+
+- id: dispatch_unit
+  number: 6
+  name: "Dispatch Unit"
+  category: scheduling
+  views: [sm]
+  parent: warp_scheduler
+  count: { per: "Warp Scheduler", n: 2 }
+  short: "Sends the decoded instruction to the correct execution unit."
+  related: [warp_scheduler, scoreboard]
+  arch_introduced: Fermi
+
+- id: scoreboard
+  number: 7
+  name: "Scoreboard"
+  category: scheduling
+  views: [sm]
+  parent: warp_scheduler
+  short: "Tracks register dependencies to know when a warp is ready to issue."
+  related: [warp_scheduler, dispatch_unit, register_file]
+  arch_introduced: Fermi
+
+- id: instruction_cache
+  number: 8
+  name: "Instruction Cache"
+  category: scheduling
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 1 }
+  short: "Caches decoded instructions to avoid refetching from L2/DRAM."
+  key_numbers:
+    - "small (KB range)"
+  related: [warp_scheduler]
+  modules: ["22-instruction-cache"]
+  arch_introduced: Fermi
+
+- id: simt_stack
+  number: 9
+  name: "SIMT Stack / Convergence Barrier"
+  category: scheduling
+  views: [sm]
+  parent: warp_scheduler
+  short: "Manages thread divergence. Tracks which threads are active per warp."
+  related: [warp_scheduler]
+  modules: ["04-warp-behavior"]
+  arch_introduced: Fermi
+
+# ============================================================================
+# 3. Inside the SM - Register File (#10-#12)
+# ============================================================================
+
+- id: register_file
+  number: 10
+  name: "Register File"
+  category: memory
+  views: [sm, memory]
+  parent: sm
+  count: { per: "SM", n: 1 }
+  short: "Per-thread private storage. The fastest memory on the chip."
+  key_numbers:
+    - "65,536 × 32-bit registers per SM"
+    - "~1 cycle latency"
+    - "~8 TB/s"
+  details: |
+    Registers are partitioned among all resident threads. Register pressure
+    is often the primary limiter of occupancy.
+  related: [warp_scheduler, warp_shuffle, local_memory, uniform_register_file]
+  modules: ["03-registers"]
+  latency: fast
+  arch_introduced: Fermi
+
+- id: warp_shuffle
+  number: 11
+  name: "Warp Shuffle"
+  category: memory
+  views: [sm, memory]
+  parent: register_file
+  short: "Cross-lane data path - threads read each other's registers directly."
+  key_numbers:
+    - "32 lanes"
+    - "~1 cycle"
+    - "~4 TB/s"
+  details: |
+    __shfl_sync, __shfl_up_sync, __shfl_down_sync, __shfl_xor_sync.
+    Register-to-register across lanes - no memory touched.
+  related: [register_file]
+  modules: ["05-warp-shuffle"]
+  latency: fast
+  arch_introduced: Kepler
+
+- id: uniform_register_file
+  number: 12
+  name: "Uniform Register File"
+  category: memory
+  views: [sm]
+  parent: register_file
+  short: "Shared registers for values identical across a warp. Saves register pressure."
+  related: [register_file]
+  latency: fast
+  arch_introduced: Hopper
+
+# ============================================================================
+# 4. Inside the SM - Compute Units (#13-#19)
+# ============================================================================
+
+- id: fp32_cores
+  number: 13
+  name: "FP32 CUDA Cores"
+  category: compute
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 128 }
+  short: "Single-precision float ALU - FADD, FMUL, FFMA."
+  key_numbers:
+    - "64-128 per SM"
+  related: [int32_cores, fp64_cores, tensor_cores]
+  modules: ["17-fp64-int32-dual-issue"]
+  arch_introduced: Fermi
+
+- id: int32_cores
+  number: 14
+  name: "INT32 Cores"
+  category: compute
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 64 }
+  short: "Integer arithmetic. Dual-issues with FP32 on Volta+."
+  related: [fp32_cores]
+  modules: ["17-fp64-int32-dual-issue"]
+  arch_introduced: Volta
+
+- id: fp64_cores
+  number: 15
+  name: "FP64 Cores"
+  category: compute
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 4 }
+  short: "Double-precision float. Far fewer than FP32."
+  key_numbers:
+    - "1:2 ratio (data-center)"
+    - "1:32 ratio (consumer)"
+  related: [fp32_cores]
+  modules: ["17-fp64-int32-dual-issue"]
+  arch_introduced: Fermi
+
+- id: sfu
+  number: 16
+  name: "Special Function Units"
+  category: compute
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 16 }
+  short: "Transcendentals: sin, cos, exp, rsqrt, rcp, log2."
+  details: |
+    Lower throughput than ALU. Accessed via intrinsics like __sinf(), __expf().
+  related: [fp32_cores]
+  modules: ["16-special-function-units"]
+  arch_introduced: Fermi
+
+- id: tensor_cores
+  number: 17
+  name: "Tensor Cores"
+  category: compute
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 4 }
+  short: "Matrix multiply-accumulate: D = A*B + C."
+  key_numbers:
+    - "FP16/BF16/TF32/FP8/INT8/INT4"
+  details: |
+    Generations: 1st (Volta, FP16), 2nd (Turing, INT8/4), 3rd (Ampere, TF32/BF16),
+    4th (Hopper, FP8), 5th (Blackwell, FP4, 2× Hopper throughput).
+  related: [fp32_cores, transformer_engine]
+  modules: ["09-tensor-cores"]
+  arch_introduced: Volta
+
+- id: rt_cores
+  number: 18
+  name: "RT Cores"
+  category: compute
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 1 }
+  short: "Hardware ray-BVH intersection: ray-box + ray-triangle tests."
+  details: |
+    RTX-only. Traverses BVH acceleration structures in hardware.
+  related: [fp32_cores]
+  modules: ["18-rt-cores"]
+  arch_introduced: Turing
+
+- id: ld_st
+  number: 19
+  name: "Load/Store Units"
+  category: memory
+  views: [sm]
+  parent: sm
+  count: { per: "SM", n: 32 }
+  short: "All memory operations. Coalescing logic lives here."
+  related: [shared_memory_l1, register_file, l2_cache]
+  modules: ["01_global-memory"]
+  arch_introduced: Fermi
+
+# ============================================================================
+# 5. Inside the SM - Memory (#20-#27)
+# ============================================================================
+
+- id: shared_memory_l1
+  number: 20
+  name: "Shared Memory / L1"
+  category: memory
+  views: [sm, memory]
+  parent: sm
+  count: { per: "SM", n: 1 }
+  short: "Programmer-managed scratchpad + HW-managed L1. 32 banks, 4B stride."
+  key_numbers:
+    - "48-228 KB per SM"
+    - "~5 cycle latency"
+    - "~1.5 TB/s"
+  related: [ld_st, register_file, shared_atomic_unit, l1_data]
+  modules: ["02-shared-memory"]
+  latency: fast
+  arch_introduced: Maxwell
+
+- id: l1_data
+  number: 21
+  name: "L1 Data Cache"
+  category: memory
+  views: [sm, memory]
+  parent: sm
+  short: "Hardware-managed cache for global memory reads. Shares SRAM with shared memory."
+  key_numbers:
+    - "~30 cycles"
+    - "~1.5 TB/s"
+  related: [shared_memory_l1, l2_cache, constant_cache, texture_cache]
+  modules: ["06-L1-L2-cache"]
+  latency: mid
+  arch_introduced: Fermi
+
+- id: constant_cache
+  number: 22
+  name: "Constant Cache"
+  category: memory
+  views: [sm, memory]
+  parent: sm
+  short: "Broadcast-optimized. Fast if all threads read the same address."
+  key_numbers:
+    - "64 KB constant memory"
+    - "~5 cycles"
+  details: |
+    Cached per SM. Serialized if threads read different addresses.
+  related: [l1_data]
+  modules: ["13-constant-memory"]
+  latency: fast
+  arch_introduced: Fermi
+
+- id: texture_cache
+  number: 23
+  name: "Texture Cache / Texture Units"
+  category: memory
+  views: [sm, memory]
+  parent: sm
+  short: "2D/3D spatial locality, hardware interpolation and filtering."
+  details: |
+    Shares L1 SRAM on modern architectures.
+    __ldg() reads global memory through the texture cache path.
+  related: [l1_data]
+  modules: ["14-texture-memory"]
+  latency: mid
+  arch_introduced: Fermi
+
+- id: local_memory
+  number: 24
+  name: "Local Memory"
+  category: memory
+  views: [sm, memory]
+  parent: sm
+  short: "Per-thread spill space when registers run out. Not local - lives in DRAM."
+  key_numbers:
+    - "~400 cycles (same as global)"
+  related: [register_file, hbm]
+  modules: ["15-local-memory"]
+  latency: slow
+  arch_introduced: Fermi
+
+- id: shared_atomic_unit
+  number: 25
+  name: "Shared Memory Atomic Unit"
+  category: memory
+  views: [sm]
+  parent: shared_memory_l1
+  short: "Hardware atomic operations on shared memory. Lower latency than global atomics."
+  related: [shared_memory_l1, l2_atomic]
+  modules: ["07-atomics"]
+  arch_introduced: Maxwell
+
+- id: async_copy
+  number: 26
+  name: "Async Copy Engine"
+  category: memory
+  views: [sm]
+  parent: sm
+  short: "cp.async: global → shared without staging through registers."
+  related: [shared_memory_l1, ld_st, tma]
+  modules: ["10-async-copy"]
+  arch_introduced: Ampere
+
+- id: tma
+  number: 27
+  name: "TMA"
+  category: memory
+  views: [sm]
+  parent: sm
+  short: "Tensor Memory Accelerator - hardware-driven tensor tile loads/stores."
+  details: |
+    Performs multidimensional tile copies in hardware. Pairs with Tensor Cores.
+  related: [async_copy, tensor_cores]
+  modules: ["10-async-copy"]
+  arch_introduced: Hopper
+
+# ============================================================================
+# 6. Chip-Level Memory Hierarchy (#28-#32)
+# ============================================================================
+
+- id: l2_cache
+  number: 28
+  name: "L2 Cache"
+  category: memory
+  views: [chip, memory]
+  count: { per: "GPU", n: 1 }
+  short: "Shared across all SMs. Last stop before DRAM."
+  key_numbers:
+    - "4-96 MB"
+    - "~200 cycle latency"
+    - "~3 TB/s"
+  related: [l1_data, hbm, l2_atomic, l2_residency]
+  modules: ["06-L1-L2-cache"]
+  latency: mid
+  arch_introduced: Fermi
+
+- id: l2_atomic
+  number: 29
+  name: "L2 Atomic Unit"
+  category: memory
+  views: [chip]
+  parent: l2_cache
+  short: "Hardware atomics on L2-resident data. Faster than DRAM atomics."
+  related: [l2_cache, shared_atomic_unit]
+  modules: ["07-atomics"]
+  arch_introduced: Maxwell
+
+- id: l2_residency
+  number: 30
+  name: "L2 Residency Control"
+  category: memory
+  views: [chip]
+  parent: l2_cache
+  short: "Hint which data should stay in L2. cudaAccessPolicyWindow."
+  related: [l2_cache]
+  modules: ["06-L1-L2-cache"]
+  arch_introduced: Ampere
+
+- id: memory_controllers
+  number: 31
+  name: "Memory Controllers"
+  category: fixed-function
+  views: [chip]
+  count: { per: "GPU", n: 12 }
+  short: "Interface between L2 and DRAM. Scheduling, ECC, refresh."
+  key_numbers:
+    - "8-16 channels"
+  related: [l2_cache, hbm]
+  arch_introduced: Fermi
+
+- id: hbm
+  number: 32
+  name: "HBM / GDDR VRAM"
+  category: memory
+  views: [chip, memory]
+  count: { per: "GPU", n: 1 }
+  short: "Main GPU memory. Big, slow relative to caches."
+  key_numbers:
+    - "8-192 GB"
+    - "400 GB/s (GDDR) - 3+ TB/s (HBM3e)"
+    - "~400 cycle latency"
+  related: [l2_cache, memory_controllers, local_memory]
+  modules: ["12-memory-bandwidth"]
+  latency: slow
+  arch_introduced: Fermi
+
+# ============================================================================
+# 7. Fixed-Function & Accelerator Engines (#33-#41)
+# ============================================================================
+
+- id: copy_engines
+  number: 33
+  name: "Copy Engines (CE / DMA)"
+  category: fixed-function
+  views: [chip]
+  count: { per: "GPU", n: 2 }
+  short: "Async memcpy: H2D, D2H, D2D, P2P. Run in parallel with compute."
+  related: [pcie, nvlink]
+  modules: ["11-multi-stream"]
+  arch_introduced: Fermi
+
+- id: nvenc
+  number: 34
+  name: "NVENC"
+  category: fixed-function
+  views: [chip]
+  count: { per: "GPU", n: 1 }
+  short: "Hardware video encoder (H.264, H.265, AV1)."
+  related: [nvdec]
+  arch_introduced: Kepler
+
+- id: nvdec
+  number: 35
+  name: "NVDEC"
+  category: fixed-function
+  views: [chip]
+  count: { per: "GPU", n: 1 }
+  short: "Hardware video decoder."
+  related: [nvenc]
+  arch_introduced: Kepler
+
+- id: nvjpg
+  number: 36
+  name: "NVJPG"
+  category: fixed-function
+  views: [chip]
+  count: { per: "GPU", n: 1 }
+  short: "Hardware JPEG decoder (Orin/Hopper)."
+  arch_introduced: Hopper
+
+- id: nvof
+  number: 37
+  name: "NVOF"
+  category: fixed-function
+  views: [chip]
+  count: { per: "GPU", n: 1 }
+  short: "Optical flow accelerator."
+  arch_introduced: Turing
+
+- id: raster_engine
+  number: 38
+  name: "Raster Engine"
+  category: fixed-function
+  views: [chip]
+  parent: gpc
+  count: { per: "GPC", n: 1 }
+  short: "Rasterization for the graphics pipeline."
+  related: [gpc, rop]
+  arch_introduced: Fermi
+
+- id: rop
+  number: 39
+  name: "ROP"
+  category: fixed-function
+  views: [chip]
+  short: "Render Output Units - pixel blending, depth test, antialiasing."
+  related: [raster_engine, l2_cache]
+  arch_introduced: Fermi
+
+- id: display_engine
+  number: 40
+  name: "Display Engine"
+  category: fixed-function
+  views: [chip]
+  count: { per: "GPU", n: 1 }
+  short: "Drives video output (HDMI, DisplayPort). Data-center GPUs often lack it."
+  arch_introduced: Fermi
+
+- id: page_migration_engine
+  number: 41
+  name: "Page Migration Engine"
+  category: fixed-function
+  views: [chip]
+  short: "Handles unified memory page faults and migration."
+  related: [hbm, pcie]
+  modules: ["20-unified-memory"]
+  arch_introduced: Pascal
+
+# ============================================================================
+# 8. Interconnects (#42-#45)
+# ============================================================================
+
+- id: pcie
+  number: 42
+  name: "PCIe Interface"
+  category: interconnect
+  views: [chip]
+  count: { per: "GPU", n: 1 }
+  short: "GPU ↔ Host CPU communication."
+  key_numbers:
+    - "Gen4: 32 GB/s"
+    - "Gen5: 64 GB/s"
+  related: [nvlink, copy_engines]
+  modules: ["11-multi-stream"]
+  arch_introduced: Fermi
+
+- id: nvlink
+  number: 43
+  name: "NVLink"
+  category: interconnect
+  views: [chip]
+  short: "GPU ↔ GPU high-bandwidth link."
+  key_numbers:
+    - "600-900 GB/s bidirectional"
+  related: [pcie, nvswitch]
+  modules: ["19-nvlink-gpu-to-gpu"]
+  arch_introduced: Pascal
+
+- id: nvswitch
+  number: 44
+  name: "NVSwitch"
+  category: interconnect
+  views: [chip]
+  short: "All-to-all NVLink fabric for multi-GPU. Up to 8 GPUs fully connected."
+  related: [nvlink]
+  modules: ["19-nvlink-gpu-to-gpu"]
+  arch_introduced: Volta
+
+- id: c2c
+  number: 45
+  name: "C2C"
+  category: interconnect
+  views: [chip]
+  short: "Chip-to-Chip link - Grace-Hopper CPU-GPU coherent."
+  key_numbers:
+    - "900 GB/s, cache-coherent"
+  related: [nvlink, pcie]
+  arch_introduced: Hopper
+
+# ============================================================================
+# 9. Hopper+ / Blackwell Features (#46-#53)
+# ============================================================================
+
+- id: thread_block_clusters
+  number: 46
+  name: "Thread Block Clusters"
+  category: special
+  views: [sm]
+  short: "Cooperative launch across multiple SMs (SM 9.0+)."
+  related: [dsmem, sm]
+  modules: ["21-thread-block-clusters"]
+  arch_introduced: Hopper
+
+- id: dsmem
+  number: 47
+  name: "Distributed Shared Memory"
+  category: memory
+  views: [sm]
+  parent: shared_memory_l1
+  short: "SM can read another SM's shared memory within a cluster."
+  related: [thread_block_clusters, shared_memory_l1]
+  modules: ["21-thread-block-clusters"]
+  latency: mid
+  arch_introduced: Hopper
+
+- id: transformer_engine
+  number: 49
+  name: "Transformer Engine"
+  category: special
+  views: [sm]
+  parent: tensor_cores
+  short: "FP8 ↔ FP16 dynamic scaling for transformer layers."
+  related: [tensor_cores]
+  modules: ["23-transformer-engine"]
+  arch_introduced: Hopper
+
+- id: dpx
+  number: 50
+  name: "DPX Instructions"
+  category: special
+  views: [sm]
+  short: "Hardware dynamic programming (Smith-Waterman, Viterbi)."
+  related: [int32_cores]
+  arch_introduced: Hopper
+
+- id: confidential_computing
+  number: 51
+  name: "Confidential Computing"
+  category: special
+  views: [chip]
+  short: "Hardware encryption of GPU memory."
+  related: [hbm]
+  arch_introduced: Hopper
+
+- id: tensor_cores_5th
+  number: 52
+  name: "5th-Gen Tensor Cores"
+  category: special
+  views: [sm]
+  parent: tensor_cores
+  short: "FP4 support, 2× throughput over Hopper."
+  related: [tensor_cores]
+  arch_introduced: Blackwell
+
+- id: mig
+  number: 53
+  name: "Multi-Instance GPU"
+  category: special
+  views: [chip]
+  short: "Partition one GPU into isolated instances. Up to 7."
+  related: [sm, hbm]
+  modules: ["24-mig"]
+  arch_introduced: Ampere

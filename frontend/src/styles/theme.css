@@ -1,0 +1,30 @@
+:root {
+  /* Blueprint palette */
+  --bp-bg:         #08131c;
+  --bp-bg-soft:    #0d1a24;
+  --bp-panel:      #0f1a24;
+  --bp-line:       #7cd3ff;
+  --bp-line-dim:   rgba(124, 211, 255, 0.4);
+  --bp-grid:       rgba(124, 211, 255, 0.05);
+  --bp-text:       #b8e0f5;
+  --bp-text-dim:   rgba(184, 224, 245, 0.55);
+  --bp-muted:      #6b7686;
+
+  /* Category accents (used by PartBox) */
+  --cat-scheduling:    #ffc850;
+  --cat-compute:       #6effb4;
+  --cat-memory:        #ff78b4;
+  --cat-interconnect:  #a078ff;
+  --cat-fixed-function:#ff9b4a;
+  --cat-special:       #7cd3ff;
+
+  /* Sizing */
+  --topbar-h:      48px;
+  --radius-sm:     2px;
+  --radius-md:     4px;
+  --detail-w:      38%;
+
+  /* Type */
+  --font-mono:     ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  --font-body:     system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}

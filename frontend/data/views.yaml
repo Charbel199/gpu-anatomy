@@ -1,0 +1,42 @@
+- id: chip
+  title: "GPU Chip"
+  layout: stack
+  rows:
+    - [gigathread]
+    - [gpc, gpc, gpc, gpc, gpc, gpc, gpc, gpc]
+    # SMs flattened under GPCs for v1 rendering.
+    - [sm, sm, sm, sm, sm, sm, sm, sm]
+    - [l2_cache, l2_atomic, l2_residency]
+    - [memory_controllers]
+    - [hbm]
+    - [pcie, nvlink, nvswitch, c2c]
+    - [copy_engines, page_migration_engine]
+    - [nvenc, nvdec, nvjpg, nvof]
+    - [raster_engine, rop, display_engine]
+    - [mig, confidential_computing]
+
+- id: sm
+  title: "SM - Streaming Multiprocessor"
+  layout: stack
+  rows:
+    - [instruction_cache]
+    - [warp_scheduler, warp_scheduler, warp_scheduler, warp_scheduler]
+    - [dispatch_unit, scoreboard, simt_stack]
+    - [register_file, uniform_register_file, warp_shuffle]
+    - [fp32_cores, int32_cores, fp64_cores]
+    - [tensor_cores, sfu, ld_st, rt_cores]
+    - [shared_memory_l1, l1_data, constant_cache, texture_cache]
+    - [async_copy, tma, shared_atomic_unit, local_memory]
+    - [thread_block_clusters, dsmem, transformer_engine, tensor_cores_5th, dpx]
+
+- id: memory
+  title: "Memory Hierarchy"
+  layout: pyramid
+  rows:
+    - [register_file]
+    - [warp_shuffle]
+    - [shared_memory_l1, l1_data]
+    - [constant_cache, texture_cache]
+    - [l2_cache]
+    - [local_memory]
+    - [hbm]

@@ -1,0 +1,39 @@
+- id: shared_atomic
+  title: "A shared-memory atomic add"
+  view: sm
+  steps:
+    - { from: ld_st, to: shared_memory_l1, label: "issue" }
+    - { from: shared_memory_l1, to: shared_atomic_unit, label: "atomic" }
+    - { from: shared_atomic_unit, to: register_file, label: "return" }
+
+- id: global_load
+  title: "A coalesced global load"
+  view: chip
+  steps:
+    - { from: sm, to: l2_cache, label: "miss" }
+    - { from: l2_cache, to: hbm, label: "miss" }
+    - { from: hbm, to: l2_cache, label: "fill" }
+    - { from: l2_cache, to: sm, label: "deliver" }
+
+- id: tensor_matmul
+  title: "Tensor-core matrix multiply"
+  view: sm
+  steps:
+    - { from: shared_memory_l1, to: register_file, label: "load tiles" }
+    - { from: register_file, to: tensor_cores, label: "issue MMA" }
+    - { from: tensor_cores, to: register_file, label: "accumulate" }
+
+- id: async_copy
+  title: "cp.async - skip registers"
+  view: sm
+  steps:
+    - { from: ld_st, to: async_copy, label: "issue" }
+    - { from: async_copy, to: shared_memory_l1, label: "deliver" }
+
+- id: memory_fill
+  title: "Global → L2 → L1 → Register"
+  view: memory
+  steps:
+    - { from: hbm, to: l2_cache, label: "fill L2" }
+    - { from: l2_cache, to: l1_data, label: "fill L1" }
+    - { from: l1_data, to: register_file, label: "deliver" }
