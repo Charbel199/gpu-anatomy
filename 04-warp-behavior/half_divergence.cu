@@ -5,7 +5,7 @@
 
 
 #define BLOCK_SIZE 256
-#define N ((1 << 24)+7)  // 16M (2^24) elements
+#define N (1 << 24)  // 16M (2^24) elements
 
 // both paths do the same operation (x * const + const = one FFMA), just with different
 // constants so the compiler can't merge them. Same cost per call
@@ -105,7 +105,7 @@ so any difference between them is isolated to divergence behavior.
   The thread-active ratio drops to ~20.63 because many instructions (inside path_a and path_b)
   only have half the warp active.
 
-The wall-clock cost of divergence here is ~13% (0.90x speedup). Small because this kernel is
+The wall-clock cost of divergence here is ~11% (0.90x speedup). Small because this kernel is
 memory-bound (just a load + store), so the divergence only really penalizes the tiny compute
 section (still significant). In a compute-bound kernel the cost would be much larger.
 */
