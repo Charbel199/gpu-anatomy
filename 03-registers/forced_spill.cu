@@ -120,6 +120,12 @@ ncu --metrics launch__registers_per_thread,l1tex__t_bytes_pipe_lsu_mem_local_op_
     l1tex__t_bytes_pipe_lsu_mem_local_op_st.sum           Gbyte        77.58
     launch__registers_per_thread                register/thread          255
     ------------------------------------------- --------------- ------------
-TODO: Add info here
 
+In the first two kernels (36 and 80 registers/thread), occupancy drops as register use grows
+but no spills occur, everything still fits in the per-thread register file.
+
+The third kernel maxes out the hardware ceiling at 255 registers/thread. When the compiler
+can't keep more values in registers, they get spilled to local memory, visible as the load/store traffic under
+l1tex__t_bytes_pipe_lsu_mem_local_op_ld/st. Since local memory lives in DRAM, every spill access
+is a ~400-cycle round-trip (this dramatically slows our kernel down).
 */
