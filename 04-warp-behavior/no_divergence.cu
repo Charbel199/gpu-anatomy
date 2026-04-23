@@ -65,7 +65,7 @@ Running no divergence kernel ...==PROF== Disconnected from process 589727
     smsp__thread_inst_executed_per_inst_executed.ratio                          32
     ----------------------------------------------------- ----------- ------------
 
-The 32 for the average number of active threads per issued instruction in a warp makes complete sense. But why did we get 0% for the first metric ?
+The 32 for the average number of active threads per issued instruction in a warp makes complete sense. But why did we get 0% for smsp__sass_average_branch_targets_threads_uniform.pct ?
 
 If we go down to SASS
 cuobjdump --dump-sass bin/04-warp-behavior/no_divergence > no_divergence.sass
@@ -91,13 +91,14 @@ cuobjdump --dump-sass bin/04-warp-behavior/no_divergence > no_divergence.sass
                            EXIT ;
 Address 0130               BRA 0x130;
 
-The compiler optimized the if statement into branch predication:
+The compiler optimized the if statement into predicated instructions:
         ISETP.GE.AND P0, PT, R7, UR5, PT ;
     @P0 EXIT ;
 
 In simple terms, P0 = (R7 >= UR5) = (idx >= N), the compiler actually flipped the condition
-EXIT technically happens in both cases but only actually commited when P0 is true
+The EXIT instruction is issued to the warp scheduler regardless, but each lane's internal pipeline only 
+commits it when P0 is true for that lane. Lanes where P0 is false make the EXIT a no-op.
 
-In even simpler terms, branch predications is the compiler's way to optimize branching away (when it is beneficial), every thread runs every instruction
+In even simpler terms, predications is the compiler's way to optimize branching away (when it is beneficial), every thread runs every instruction
 But every thread has a per-lane bit (like P0, a predicate register) that decides whether the instruction's result actually takes effect.
 */
