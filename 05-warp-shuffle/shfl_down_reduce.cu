@@ -55,11 +55,13 @@ Looking at what we're doing, it's actually pretty simple
 
 In the first iteration, every value from thread warp idx 0 -> 15, adds the respective values from 16 -> 31
 
+_These are thread indices in a warp_
 val += __shfl_down_sync(0xFFFFFFFF, val, 16);
 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
 +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +
 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
                                                 (out of range, they get their own value back, result is junk)
+
 0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 ...
 +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  +  ...
 8  9  10 11 12 13 14 15 ...
