@@ -38,7 +38,7 @@ int main() {
     CUDA_CHECK(cudaMemset(d_data, 0, N_float_bytes));
     int grid = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    bool ncu = true;
+    bool ncu = false;
 
     if (!ncu) {
         printf("\nRunning sin_precise ...");
