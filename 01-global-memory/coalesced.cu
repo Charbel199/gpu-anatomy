@@ -38,7 +38,6 @@ int main() {
 
         // device memory
         float *d_data, *d_out;
-        int *d_idx;
         CUDA_CHECK(cudaMalloc(&d_data, N_float_bytes));
         CUDA_CHECK(cudaMalloc(&d_out, N_float_bytes));
 
@@ -58,7 +57,6 @@ int main() {
 
         CUDA_CHECK(cudaFree(d_data));
         CUDA_CHECK(cudaFree(d_out));
-        CUDA_CHECK(cudaFree(d_idx));
     }
 
 }
